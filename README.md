@@ -48,6 +48,7 @@ $ pip3 install playsound
 Clone the repository. Go to your terminal and type:
 
 ```bash
+$ cd Email_Assistant
 $ python3 email_assistant.py
 ```
 
