@@ -1,10 +1,7 @@
-# Load your env variables
-from dotenv import load_dotenv
-load_dotenv()
-
 # Import your dependencies
+from dotenv import load_dotenv
 import dearpygui.dearpygui as dpg
-from nylas import APIClient
+from nylas import Client
 import os
 import re
 import openai
@@ -14,6 +11,9 @@ import time
 import jellyfish
 import textwrap
 from playsound import playsound
+
+# Load your env variables
+load_dotenv()
 
 # Some global variables
 emails = []
@@ -50,7 +50,8 @@ def record_input(output_filename = ""):
         audio = recognizer.listen(source, phrase_time_limit = None, timeout = None)
         try:
             transcription = recognizer.recognize_google(audio)
-        except:
+        except Exception as e:
+            print(f'{e}')
             transcription = ""
             synthesize_speech("Sorry, I didn't get that. Please start again.", 'response.mp3')
             play_audio('response.mp3')
@@ -63,9 +64,9 @@ def transcribe_audio_to_text(filename):
         audio = recogizer.record(source) 
     try:
         return recogizer.recognize_google(audio)
-    except:
-        speak_text("There was an error")
-
+    except Exception as e:
+        print(f'{e}')
+       
 # To define the color of the buttons
 def _hsv_to_rgb(h, s, v):
     if s == 0.0: return (v, v, v)
@@ -104,29 +105,35 @@ def show_info(title, message, selection_callback):
 def on_selection(sender, unused, user_data):
     dpg.delete_item(user_data[0])
 
-# Initialize an instance of the Nylas SDK using the client credentials
-nylas = APIClient(
-    os.environ.get("CLIENT_ID"),
-    os.environ.get("CLIENT_SECRET"),
-    os.environ.get("ACCESS_TOKEN")
+# Initialize Nylas client
+nylas = Client(
+    api_key = os.environ.get("V3_API_KEY")
 )
+
+request_body = {
+	'limit': contacts_limit
+}
 
 # Load contacts using the contacts endpoint
 def load_config(emails):
-    contacts = nylas.contacts.where(source = 'address_book', limit = contacts_limit)
+    contacts, _, _ = nylas.contacts.list(os.environ.get("GRANT_ID"), request_body)
     for contact in contacts:
         email_detail = contact.given_name + " " + contact.surname + ": "
         try:
-            email_detail += contact.emails["personal"][0]
+            email_detail += contact.emails[0].email
             emails.append(email_detail)
-        except:
-            try:
-                email_detail += contact.emails["work"][0]
-                emails.append(email_detail)
-            except:
-                email_detail += contact.emails[None][0]
-                emails.append(email_detail)
+        except Exception as e:
+            print(f'{e}')
     return emails
+
+def get_completion(prompt):
+    response = openai.ChatCompletion.create(
+        model="gpt-3.5-turbo", 
+        messages=[
+            {"role": "user", "content": f"{prompt}"}
+        ]        
+    )
+    return response.choices[0].message.content
 
 # Calls the Email Wizard: Voice recognition, text-to-speech, ChatGPT
 def wizard_callback(sender, app_data, user_data):
@@ -173,13 +180,13 @@ def wizard_callback(sender, app_data, user_data):
         # Replace Name and Content with proper information
         prompt = re.sub("Name", transcription_emails, prompt)
         prompt = re.sub("Content", transcription, prompt)
-        synthesize_speech(f"I'm generating the content of the email. Please wait.", 'response.mp3')
+        synthesize_speech("I'm generating the content of the email. Please wait.", 'response.mp3')
         play_audio('response.mp3')        
         # Call ChatGPT
-        response = openai.Completion.create(model="text-davinci-003", prompt=prompt, max_tokens=100, temperature=0)
+        response = get_completion(prompt)
         # Replace signature on reponse
         wrapper = textwrap.TextWrapper(width=75)
-        body = response["choices"][0]["text"]
+        body = response
         word_list = wrapper.wrap(text=body)
         body = ""
         for word in word_list:
@@ -187,7 +194,7 @@ def wizard_callback(sender, app_data, user_data):
         body = re.sub("(\[Your Name\])", signature, body)
         # Add ChatGPT response
         dpg.set_value(txtBody, body)
-        synthesize_speech(f"I added the content to the email", 'response.mp3')
+        synthesize_speech("I added the content to the email", 'response.mp3')
         play_audio('response.mp3')
         # Wait for one second
         time.sleep(1)
@@ -196,7 +203,7 @@ def wizard_callback(sender, app_data, user_data):
         transcription = record_input("")
         # If we answer yes, then send the email
         if transcription.lower() != "no":
-            body = response["choices"][0]["text"]
+            body = response #response["choices"][0]["text"]
             body = re.sub("(\[Your Name\])", signature, body)
             emails = dpg.get_value(txtTo).rstrip(";")
             title = dpg.get_value(txtTitle)
@@ -206,16 +213,17 @@ def wizard_callback(sender, app_data, user_data):
             play_audio('response.mp3')
 
 def send_email(emails, title, body, user_data):
-    draft = nylas.drafts.create()
     participants = []
-    draft.subject = title
-    draft.body = body
     list_of_emails = email_list['email'].rstrip(";").split(";")
     list_of_names = names_list['name'].rstrip(";").split(";")
     for i in range(0, len(list_of_emails)):
         participants.append({"name":list_of_names[i],"email":list_of_emails[i]})
-    draft.to = participants
-    draft.send()
+
+    body = {"subject" : title, 
+                 "body": body,
+                 "to": participants}
+
+    nylas.messages.send(os.environ.get("GRANT_ID"), request_body = body).data
     email_list['email'] = ""
     dpg.set_value(user_data[0], email_list['email'])
     names_list['name'] = ""
