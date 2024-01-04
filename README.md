@@ -18,9 +18,8 @@ Also, we need to create an account for [Amazon Polly](https://aws.amazon.com/pol
 You'll need the following values:
 
 ```text
-ACCESS_TOKEN = ""
-CLIENT_ID = ""
-CLIENT_SECRET = ""
+V3_API_KEY = ""
+GRANT_ID = ""
 OPEN_AI = ""
 ```
 
@@ -51,7 +50,3 @@ Clone the repository. Go to your terminal and type:
 $ cd Email_Assistant
 $ python3 email_assistant.py
 ```
-
-## Learn more
-
-Visit our [Nylas Python SDK documentation](https://developer.nylas.com/docs/developer-tools/sdk/python-sdk/) to learn more.
